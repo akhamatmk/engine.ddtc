@@ -1,0 +1,588 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+class User extends MY_Controller {
+
+	public function __construct()
+    {
+        parent::__construct();
+
+        $this->load->model('user_model');
+        $this->load->model('favourite_model');
+        $this->load->model('lastseen_model');
+
+        $this->load->model('feedback_model');
+
+    	$this->load->helper('peraturan_pajak_helper');
+    }
+
+	public function index()
+	{
+		redirect('user/settings');
+	}
+
+	public function login()
+	{
+		$this->load->library('form_validation');
+		$this->form_validation->set_rules('user_email', 'Email', 'trim|required|valid_email');
+		$this->form_validation->set_rules('user_password', 'Password', 'trim|required|min_length[8]');
+		$this->form_validation->set_error_delimiters('<p class="help-block message-error">', '</p>');
+		
+		if ($this->form_validation->run() == FALSE)
+		{
+			echo json_encode(
+						array(
+							'st' => 0, 'msg' => validation_errors()
+							)
+						);
+		}
+		else
+		{
+			$user_email = $this->input->post('user_email');
+			$user_password = $this->input->post('user_password');
+
+			$do_login = $this->user_auth->do_login($user_email, $user_password);
+
+			if($do_login)
+			{
+				echo json_encode(
+						array(
+							'st' =>1 , 'msg' => '<p class="help-block message-success">Mengarahkan...</p>'
+							)
+						);
+			}
+			else
+			{
+				echo json_encode(
+						array(
+							'st' => 0, 'msg' => '<p class="help-block message-error">Wrong email or password.</p>'
+							)
+						);
+			}
+		}
+	}
+
+	public function register()
+	{
+		$this->load->library('form_validation');
+		$this->form_validation->set_rules('user_name', 'Name', 'trim|required');
+		$this->form_validation->set_rules('user_email', 'Email', 'trim|required|valid_email|is_unique[user.user_email]');
+		$this->form_validation->set_rules('user_password', 'Password', 'trim|required|min_length[8]');
+		$this->form_validation->set_message('is_unique', 'The %s is already taken.');
+		$this->form_validation->set_error_delimiters('<p class="help-block message-error">', '</p>');
+		
+		if ($this->form_validation->run() == FALSE)
+		{
+			echo json_encode(
+						array(
+								'st' => 0, 
+								'msg' => validation_errors()
+							)
+						);
+		}
+		else
+		{
+			$user_name = $this->input->post('user_name');
+			$user_email = $this->input->post('user_email');
+			$user_password = $this->input->post('user_password');
+
+			//$this->load->helper('password_helper');
+
+			//if(valid_pass($user_password))
+			//{
+				$data_user = array(
+								'user_name' => $user_name,
+								'user_email' => $user_email,
+								'user_password' => $this->user_auth->create_password($user_password),
+								'user_status' => 0,
+								'user_activation_code' => md5($user_email)
+							);
+				$this->user_model->insert($data_user);
+
+				$do_login = $this->user_auth->do_login($user_email, $user_password);
+
+				if($do_login)
+				{
+					/*SEND EMAIL ACCOUNT AND ACTIVATION*/
+					/*---------------------------------*/
+
+					echo json_encode(
+							array(
+									'st' => 1, 
+									'msg' => '<p class="help-block message-success">Mengarahkan...</p>'
+								)
+							);
+				}
+				else
+				{
+					echo json_encode(
+							array(
+									'st' => 0, 
+									'msg' => '<p class="help-block message-error">Wrong email or password.</p>'
+								)
+							);
+				}
+			//}
+			//else
+			//{
+			//	echo json_encode(
+			//				array(
+			//						'st' => 0, 
+			//						'msg' => '<p class="help-block message-error">Password harus memiliki setidaknya 8 karakter. Terdiri dari 1 digit, 1 huruf besar, dan 1 karakter non-alfanumerik.</p>'
+			//					)
+			//				);
+			//}
+		}
+	}
+
+	public function feedback()
+	{
+		if(!$this->user_auth->is_logged_in())
+		{
+			echo json_encode(
+						array(
+							'st' => 0, 'msg' => '<p class="help-block message-error">Anda harus login terlebih dahulu</p>'
+							)
+						);
+		}	
+		else
+		{
+			$this->load->library('form_validation');
+			$this->form_validation->set_rules('feedback_content', 'Kritik dan Saran', 'trim|required');
+			$this->form_validation->set_error_delimiters('<p class="help-block message-error">', '</p>');	
+
+			if ($this->form_validation->run() == FALSE)
+			{
+				echo json_encode(
+							array(
+								'st' => 0, 'msg' => validation_errors()
+								)
+							);
+			}
+			else
+			{
+				$feedback_content = $this->input->post('feedback_content');
+
+				$data = array(
+						'feedback_user' => $this->session->userdata('user_id'),
+						'feedback_content' => $feedback_content,
+						'feedback_status' => 0
+					);
+
+				$insert = $this->feedback_model->insert($data);
+
+				if($insert)
+				{
+					echo json_encode(
+							array(
+								'st' => 1, 'msg' => '<p class="help-block message-success">Kritik dan saran sudah tersimpan.</p>'
+								)
+							);
+				}
+				else
+				{
+					echo json_encode(
+							array(
+								'st' => 0, 'msg' => '<p class="help-block message-error">Kritik dan saran tidak berhasil tersimpan.</p>'
+								)
+							);
+				}
+			}
+		}
+	}
+
+	public function forgotpassword()
+	{
+		$this->load->library('form_validation');
+		$this->form_validation->set_rules('user_email', 'Email', 'trim|required|valid_email');
+		$this->form_validation->set_error_delimiters('<p class="help-block message-error">', '</p>');
+		
+		if ($this->form_validation->run() == FALSE)
+		{
+			echo json_encode(
+						array(
+							'st' => 0, 'msg' => validation_errors()
+							)
+						);
+		}
+		else
+		{
+			$user_email = $this->input->post('user_email');
+
+			$user = $this->user_model->get_by('user_email', $user_email);
+
+			if(count($user) > 0)
+			{
+				if($user['user_password'] == "" || !$user['user_password'])
+				{
+					echo json_encode(
+								array(
+									'st' =>0 , 'msg' => '<p class="help-block message-error">Email ini terdaftar menggunakan Facebook, silahlan login dengan Facebook.</p>'
+									)
+								);	
+				}
+				else
+				{
+					//send email
+					$this->load->library('email');
+
+					$config['crlf'] = '\r\n';
+					$config['newline'] = '\r\n';
+					$config['wordwrap'] = TRUE;
+
+					$this->email->initialize($config);
+
+					$this->email->from('info@dannydarussalam.com', 'Tax Engine');
+					$this->email->to($user_email);
+
+					$this->email->subject('[Tax Engine] Forgot Password');
+
+					$message = "Halo, ". $user['user_name'] .".\n\n";
+					$message .= "Lupa dengan password Anda? Klik link dibawah untuk mengganti:\n\n";
+					$message .= site_url("user/resetpassword/". $user['user_activation_code']) ."\n\n";
+					$message .= "Terimakasih\n\nTax Engine by Danny Darussalam";
+
+					$this->email->message($message);
+
+					if (!$this->email->send())
+					{
+						echo json_encode(
+									array(
+										'st' =>0 , 'msg' => '<p class="help-block message-error">Oops, tidak berhasil mengirimkan email.</p>'
+										)
+									);	
+					}
+					else
+					{
+						echo json_encode(
+									array(
+										'st' =>1 , 'msg' => '<p class="help-block message-success-alt-1">Silahkan cek email Anda.</p>'
+										)
+									);
+					}
+				}
+			}
+			else
+			{
+				echo json_encode(
+							array(
+								'st' =>0 , 'msg' => '<p class="help-block message-error">Email ini tidak terdaftar.</p>'
+								)
+							);	
+			}
+		}
+	}
+
+	public function resetpassword($code)
+	{
+		$user = $this->user_model->get_by('user_activation_code', $code);
+
+		if(count($user) > 0)
+		{
+			$this->load->helper('string');
+			$new_password = random_string('alnum', 8);
+
+			$data = array(
+					'user_password' => $this->user_auth->create_password($new_password)
+				);
+
+			$update = $this->user_model->update($user['user_id'], $data);
+
+			if($update)
+			{
+				//send email
+				$this->load->library('email');
+
+				$config['crlf'] = '\r\n';
+				$config['newline'] = '\r\n';
+				$config['wordwrap'] = TRUE;
+
+				$this->email->initialize($config);
+
+				$this->email->from('info@dannydarussalam.com', 'Tax Engine');
+				$this->email->to($user['user_email']);
+
+				$this->email->subject('[Tax Engine] Reset Password');
+
+				$message = "Halo, ". $user['user_name'] .".\n\n";
+				$message .= "Berikut info akun baru Anda:\n\n";
+				$message .= "Email: " . $user['user_email'] . "\n";
+				$message .= "Password: " . $new_password . "\n\n";
+				$message .= "Terimakasih\n\nTax Engine by Danny Darussalam";
+
+				$this->email->message($message);
+				//----------
+
+				if (!$this->email->send())
+				{
+					$this->session->set_flashdata('msg_changepassword', '<p>Oops, tidak berhasil mengirimkan email.</p>');
+
+					redirect('home');
+				}
+				else
+				{
+					$this->session->set_flashdata('msg_changepassword', '<p>Reset password berhasil, silahkan cek email untuk melihat password baru.</p>');
+
+					redirect('home');
+				}
+			}
+			else
+			{
+				$this->session->set_flashdata('msg_changepassword', '<p>Reset password gagal.</p>');
+
+				redirect('home');
+			}
+		}
+		else
+		{
+			$this->session->set_flashdata('msg_changepassword', '<p>Reset password gagal.</p>');
+
+			redirect('home');
+		}
+	}
+
+	public function settings()
+	{
+		if(!$this->user_auth->is_logged_in())
+		{
+			redirect('home');
+		}
+		else
+		{
+			$favourite = $this->favourite_model->get_favourite_by_user($this->session->userdata('user_id'));
+			$data['favourite'] = $favourite;
+
+			$lastseen = $this->lastseen_model->get_lastseen_by_user($this->session->userdata('user_id'));
+			$data['lastseen'] = $lastseen;
+
+			$this->template->set('container_class', '');
+			$this->template->set('title', 'User Setting - '.$this->config->item('web_title'));
+			$this->template->load('web/template/template-2', 'web/user/user-settings', $data);
+		}
+	}
+
+	public function do_settings()
+	{
+		$this->load->library('form_validation');
+		$this->form_validation->set_rules('setting_name', 'Nama', 'trim|required');
+
+		if(!empty($this->input->post('setting_password')))
+		{
+			$this->form_validation->set_rules('setting_password', 'Kata sandi', 'trim|required|min_length[8]');
+			$this->form_validation->set_rules('setting_repassword', 'Ulang Kata sandi', 'trim|required|min_length[8]|matches[setting_password]');
+		}
+
+		$this->form_validation->set_error_delimiters('<p class="help-block message-error">', '</p>');
+
+		if($this->form_validation->run() == FALSE)
+		{
+			echo json_encode(
+						array(
+								'st' => 0, 
+								'msg' => validation_errors()
+							)
+						);
+		}
+		else
+		{
+			if(!empty($_FILES['setting_image']['name']))
+        	{
+        		$config['upload_path']          = './assets/upload/images/';
+	            $config['allowed_types']        = 'gif|jpg|jpeg|png';
+	            $config['max_size']             = 1024;
+	            $config['max_width']            = 1024;
+	            $config['max_height']           = 1024;
+
+	            $new_name = time().'_'.$_FILES["setting_image"]['name'];
+				$config['file_name'] = $new_name;
+
+	            $this->load->library('upload', $config);
+
+	            if (!$this->upload->do_upload('setting_image'))
+	            {
+	                   echo json_encode(
+						array(
+								'st' => 0, 
+								'msg' => $this->upload->display_errors('<p class="help-block message-error">', '</p>')
+							)
+						);
+	            }
+	            else
+	            {
+	            	$user_id = $this->session->userdata('user_id');
+
+					$setting_name = $this->input->post('setting_name');
+					$setting_password = $this->input->post('setting_password');
+					$setting_repassword = $this->input->post('setting_repassword');
+					$setting_image = $this->upload->data('file_name');
+
+					if(empty($setting_password))
+					{
+						$data = array(
+								'user_name' => $setting_name,
+								'user_image' => $setting_image
+							);
+
+						$update = $this->user_model->update($user_id, $data);
+
+						if($update)
+						{
+							$this->session->set_userdata('user_name', $setting_name);
+							$this->session->set_userdata('user_image', $setting_image);
+							
+							echo json_encode(
+									array(
+											'st' => 1, 
+											'msg' => '<p class="help-block message-success-alt-1">Data berhasil disimpan.</p>'
+										)
+									);
+						}
+						else
+						{
+							echo json_encode(
+									array(
+											'st' => 0, 
+											'msg' => '<p class="help-block message-error">Data tidak berhasil disimpan.</p>'
+										)
+									);
+						}
+					}
+					else
+					{
+						if(valid_pass($setting_password))
+						{
+							$data = array(
+											'user_name' => $setting_name,
+											'user_image' => $setting_image,
+											'user_password' => $this->user_auth->create_password($setting_password)
+										);
+
+							$update = $this->user_model->update($user_id, $data);
+
+							if($update)
+							{
+								$this->session->set_userdata('user_name', $setting_name);
+								$this->session->set_userdata('user_image', $setting_image);
+
+								echo json_encode(
+										array(
+												'st' => 1, 
+												'msg' => '<p class="help-block message-success-alt-1">Data berhasil disimpan.</p>'
+											)
+										);
+							}
+							else
+							{
+								echo json_encode(
+										array(
+												'st' => 0, 
+												'msg' => '<p class="help-block message-error">Data tidak berhasil disimpan.</p>'
+											)
+										);
+							}
+						}
+						else
+						{
+							echo json_encode(
+										array(
+												'st' => 0, 
+												'msg' => '<p class="help-block message-error">Password harus memiliki setidaknya 8 karakter. Terdiri dari 1 digit, 1 huruf besar, dan 1 karakter non-alfanumerik.</p>'
+											)
+										);
+						}
+					}
+	            }
+            }
+            else
+            {
+            	$user_id = $this->session->userdata('user_id');
+
+				$setting_name = $this->input->post('setting_name');
+				$setting_password = $this->input->post('setting_password');
+				$setting_repassword = $this->input->post('setting_repassword');
+
+				if(empty($setting_password))
+				{
+					$data = array(
+							'user_name' => $setting_name
+						);
+
+					$update = $this->user_model->update($user_id, $data);
+
+					if($update)
+					{
+						$this->session->set_userdata('user_name', $setting_name);
+						
+						echo json_encode(
+								array(
+										'st' => 1, 
+										'msg' => '<p class="help-block message-success-alt-1">Data berhasil disimpan.</p>'
+									)
+								);
+					}
+					else
+					{
+						echo json_encode(
+								array(
+										'st' => 0, 
+										'msg' => '<p class="help-block message-error">Data tidak berhasil disimpan.</p>'
+									)
+								);
+					}
+				}
+				else
+				{
+					if(valid_pass($setting_password))
+					{
+						$data = array(
+										'user_name' => $setting_name,
+										'user_password' => $this->user_auth->create_password($setting_password)
+									);
+
+						$update = $this->user_model->update($user_id, $data);
+
+						if($update)
+						{
+							$this->session->set_userdata('user_name', $setting_name);
+
+							echo json_encode(
+									array(
+											'st' => 1, 
+											'msg' => '<p class="help-block message-success-alt-1">Data berhasil disimpan.</p>'
+										)
+									);
+						}
+						else
+						{
+							echo json_encode(
+									array(
+											'st' => 0, 
+											'msg' => '<p class="help-block message-error">Data tidak berhasil disimpan.</p>'
+										)
+									);
+						}
+					}
+					else
+					{
+						echo json_encode(
+									array(
+											'st' => 0, 
+											'msg' => '<p class="help-block message-error">Password harus memiliki setidaknya 8 karakter. Terdiri dari 1 digit, 1 huruf besar, dan 1 karakter non-alfanumerik.</p>'
+										)
+									);
+					}
+				}
+            }
+		}
+	}
+
+	public function logout()
+	{
+		$user_id = $this->session->userdata('user_id');
+		$this->user_model->update_login_last($user_id);
+
+		$this->user_auth->do_logout();
+
+		redirect('home');
+	}
+}
